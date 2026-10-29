@@ -1,4 +1,7 @@
-const API_URL = import.meta.env.VITE_API_URL || '/api';
+const rawApiUrl = (import.meta.env.VITE_API_URL || '/api').trim().replace(/\/+$/, '');
+const API_URL = rawApiUrl === '/api' || rawApiUrl.endsWith('/api')
+  ? rawApiUrl
+  : `${rawApiUrl}/api`;
 
 /**
  * Convert relative file path (/uploads/...) or API route to an accessible URL
@@ -8,7 +11,7 @@ export const getFileUrl = (url) => {
   if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:') || url.startsWith('blob:')) {
     return url;
   }
-  const apiUrl = import.meta.env.VITE_API_URL || '';
+  const apiUrl = API_URL;
   if (apiUrl && (apiUrl.startsWith('http://') || apiUrl.startsWith('https://'))) {
     const backendOrigin = apiUrl.replace(/\/api\/?$/, '');
     const cleanPath = url.startsWith('/') ? url : `/${url}`;
@@ -18,8 +21,7 @@ export const getFileUrl = (url) => {
 };
 
 export const getAppointmentResumeUrl = (appointmentId) => {
-  const apiUrl = import.meta.env.VITE_API_URL || '/api';
-  return `${apiUrl}/appointments/${appointmentId}/resume`;
+  return `${API_URL}/appointments/${appointmentId}/resume`;
 };
 
 
@@ -39,8 +41,10 @@ async function request(endpoint, options = {}) {
     headers
   };
 
+  const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+
   try {
-    const response = await fetch(`${API_URL}${endpoint}`, config);
+    const response = await fetch(`${API_URL}${cleanEndpoint}`, config);
     const data = await response.json();
 
     if (!response.ok) {
