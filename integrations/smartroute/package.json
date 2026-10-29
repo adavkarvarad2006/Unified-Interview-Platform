@@ -1,0 +1,22 @@
+{
+  "name": "SmartRoute",
+  "version": "1.0.0",
+  "description": "",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "back": "pnpm --dir backend dev",
+    "front": "pnpm --dir frontend dev",
+    "both": "concurrently -k -n API,WEB -c blue,magenta \"pnpm --dir backend dev\" \"pnpm --dir frontend dev\""
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.33.0",
+  "devDependencies": {
+    "concurrently": "^10.0.6"
+  }
+}
