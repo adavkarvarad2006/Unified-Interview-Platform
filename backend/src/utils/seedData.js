@@ -20,6 +20,7 @@ const Booking = require('../models/Booking');
 const { Placement } = require('../models/Placement');
 const Application = require('../models/Application');
 const { generateQuestions } = require('../services/geminiQuestionService');
+const { generateSessionQuizQuestionBank } = require('../services/sessionQuizQuestionBankService');
 
 const POOL = [
   'Aarav Mehta', 'Ananya Rao', 'Rohit Sharma', 'Kavya Nair', 'Vikram Singh',
@@ -196,7 +197,7 @@ const seedDatabase = async () => {
     });
 
     // 4. Create Interview Sessions (15-min and 30-min)
-    const session15 = await InterviewSession.create({
+    const session15Values = {
       title: 'Quick Interview Counselling',
       duration: 15,
       sessionType: 'COUNSELLING',
@@ -211,9 +212,11 @@ const seedDatabase = async () => {
         'Targeted roadmap for DSA or System Design preparation',
         'Direct Q&A with professor and interview mentor'
       ]
-    });
+    };
+    session15Values.quizQuestionBank = await generateSessionQuizQuestionBank(session15Values);
+    const session15 = await InterviewSession.create(session15Values);
 
-    const session30 = await InterviewSession.create({
+    const session30Values = {
       title: 'Mock Interview & Training',
       duration: 30,
       sessionType: 'MOCK_INTERVIEW',
@@ -228,7 +231,9 @@ const seedDatabase = async () => {
         '10-min live actionable debrief & scoring breakdown',
         'Official rubric feedback sheet sent to your student portal'
       ]
-    });
+    };
+    session30Values.quizQuestionBank = await generateSessionQuizQuestionBank(session30Values);
+    const session30 = await InterviewSession.create(session30Values);
 
     // 5. Calendly Integration Configuration
     await CalendlyIntegration.create({

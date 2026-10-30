@@ -11,6 +11,8 @@ const { DailySummaryGenerator, DetailedSummaryGenerator } = require('../src/serv
 const InMemoryStore = require('../src/services/inMemoryStore');
 const { difficultyIndex, updateDomainDifficulty, selectNextQuestion } = require('../src/services/adaptiveQuestionService');
 const { generateQuestions } = require('../src/services/geminiQuestionService');
+const { createSession } = require('../src/controllers/sessionController');
+const { getOrStartAppointmentQuiz } = require('../src/services/interviewQuizService');
 
 // Models
 const User = require('../src/models/User');
@@ -18,6 +20,7 @@ const Student = require('../src/models/Student');
 const Counsellor = require('../src/models/Counsellor');
 const InterviewSession = require('../src/models/InterviewSession');
 const Appointment = require('../src/models/Appointment');
+const InterviewQuizAttempt = require('../src/models/InterviewQuizAttempt');
 const Trainer = require('../src/models/Trainer');
 const TrainingSession = require('../src/models/TrainingSession');
 const { Placement } = require('../src/models/Placement');
@@ -69,6 +72,82 @@ test.describe('2. Interview Booking Core Module', () => {
     const appointments = await Appointment.find();
     assert.ok(appointments.length > 0, 'Should have seeded appointments');
     assert.ok(appointments[0].studentEmail, 'Appointment should have studentEmail');
+  });
+
+  test('Session creation stores its question bank and quiz start reuses it', async () => {
+    const previousApiKey = process.env.GEMINI_API_KEY;
+    process.env.GEMINI_API_KEY = '';
+    let sessionId;
+    let appointmentId;
+
+    try {
+      const student = await User.findOne({ email: 'emily.watson@gmail.com' });
+      assert.ok(student, 'Seeded student should exist for the quiz smoke test');
+
+      const response = {
+        statusCode: 200,
+        status(code) { this.statusCode = code; return this; },
+        json(body) { this.body = body; return this; },
+      };
+
+      await createSession({
+        body: {
+          title: 'Pre-generated quiz smoke test',
+          description: 'A test interview session for validating cached adaptive questions.',
+          duration: 15,
+          sessionType: 'MOCK_INTERVIEW',
+          calendlyEventUrl: 'https://example.test/events/quiz-smoke-test',
+          quizQuestionCount: 3,
+        },
+      }, response);
+
+      assert.equal(response.statusCode, 201);
+      assert.ok(response.body.success);
+      assert.equal(Object.hasOwn(response.body.data, 'quizQuestionBank'), false);
+      sessionId = response.body.data._id;
+
+      const session = await InterviewSession.findById(sessionId).select('+quizQuestionBank');
+      assert.equal(session.quizQuestionBank.length, 9);
+
+      const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      const appointment = await Appointment.create({
+        studentId: student._id,
+        sessionId,
+        calendlyEventId: `quiz-smoke-event-${suffix}`,
+        calendlyInviteeId: `quiz-smoke-invitee-${suffix}`,
+        date: '2026-10-30',
+        startTime: '10:00',
+        endTime: '10:15',
+        duration: 15,
+        studentName: student.name,
+        studentEmail: student.email,
+        sessionTitle: session.title,
+        sessionType: session.sessionType,
+      });
+      appointmentId = appointment._id;
+
+      const started = await getOrStartAppointmentQuiz(String(appointmentId), {
+        id: String(student._id),
+        email: student.email,
+      });
+      assert.equal(started.completed, false);
+      assert.equal(started.question.difficulty, 'easy');
+      assert.equal(started.question.totalQuestions, 3);
+      assert.ok(session.quizQuestionBank.some((question) =>
+        question.question === started.question.question && question.difficulty === 'easy'
+      ));
+
+      const attempt = await InterviewQuizAttempt.findOne({ appointment: appointmentId });
+      assert.equal(attempt.questionBank.length, 9);
+    } finally {
+      if (appointmentId) {
+        await InterviewQuizAttempt.deleteOne({ appointment: appointmentId });
+        await Appointment.findByIdAndDelete(appointmentId);
+      }
+      if (sessionId) await InterviewSession.findByIdAndDelete(sessionId);
+      if (previousApiKey === undefined) delete process.env.GEMINI_API_KEY;
+      else process.env.GEMINI_API_KEY = previousApiKey;
+    }
   });
 });
 

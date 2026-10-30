@@ -1,4 +1,5 @@
 const InterviewSession = require('../models/InterviewSession');
+const { generateSessionQuizQuestionBank } = require('../services/sessionQuizQuestionBankService');
 
 // @desc    Get active interview sessions for public booking
 // @route   GET /api/sessions
@@ -68,7 +69,7 @@ const createSession = async (req, res) => {
       quizQuestionCount = 5,
     } = req.body;
 
-    const session = await InterviewSession.create({
+    const sessionValues = {
       title,
       description,
       duration: Number(duration) || 15,
@@ -79,12 +80,16 @@ const createSession = async (req, res) => {
       badge: badge || '',
       features: features || [],
       displayOrder: Number(displayOrder) || 1
-    });
+    };
+    const quizQuestionBank = await generateSessionQuizQuestionBank(sessionValues);
+    const session = await InterviewSession.create({ ...sessionValues, quizQuestionBank });
+    const safeSession = session.toObject();
+    delete safeSession.quizQuestionBank;
 
     res.status(201).json({
       success: true,
       message: 'Session type created successfully',
-      data: session
+      data: safeSession
     });
   } catch (error) {
     res.status(400).json({ success: false, message: error.message });
@@ -101,16 +106,28 @@ const updateSession = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Session not found' });
     }
 
+    const updates = { ...req.body };
+    // The answer key is server-generated and must never be accepted from a client.
+    delete updates.quizQuestionBank;
+
+    const questionBankInputs = ['title', 'description', 'sessionType', 'quizQuestionCount'];
+    if (questionBankInputs.some((field) => Object.prototype.hasOwnProperty.call(updates, field))) {
+      const nextSessionValues = { ...session.toObject(), ...updates };
+      updates.quizQuestionBank = await generateSessionQuizQuestionBank(nextSessionValues);
+    }
+
     const updated = await InterviewSession.findByIdAndUpdate(
       req.params.id,
-      { $set: req.body },
+      { $set: updates },
       { new: true, runValidators: true }
     );
+    const safeUpdated = updated.toObject();
+    delete safeUpdated.quizQuestionBank;
 
     res.json({
       success: true,
       message: 'Session updated successfully',
-      data: updated
+      data: safeUpdated
     });
   } catch (error) {
     res.status(400).json({ success: false, message: error.message });
