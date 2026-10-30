@@ -55,7 +55,18 @@ const getSessionById = async (req, res) => {
 // @access  Private (Admin/Counsellor)
 const createSession = async (req, res) => {
   try {
-    const { title, description, duration, sessionType, calendlyEventUrl, status, badge, features, displayOrder } = req.body;
+    const {
+      title,
+      description,
+      duration,
+      sessionType,
+      calendlyEventUrl,
+      status,
+      badge,
+      features,
+      displayOrder,
+      quizQuestionCount = 5,
+    } = req.body;
 
     const session = await InterviewSession.create({
       title,
@@ -63,6 +74,7 @@ const createSession = async (req, res) => {
       duration: Number(duration) || 15,
       sessionType: sessionType || 'COUNSELLING',
       calendlyEventUrl,
+      quizQuestionCount: Number(quizQuestionCount) || 5,
       status: status || 'ACTIVE',
       badge: badge || '',
       features: features || [],

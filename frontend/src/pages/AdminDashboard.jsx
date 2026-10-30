@@ -44,6 +44,7 @@ export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState('dashboard'); // dashboard, appointments, sessions, availability, students, integration, profile
   const [stats, setStats] = useState(null);
   const [appointments, setAppointments] = useState([]);
+  const [quizResult, setQuizResult] = useState(null);
   const [sessions, setSessions] = useState([]);
   const [blockedDates, setBlockedDates] = useState([]);
   const [students, setStudents] = useState([]);
@@ -178,7 +179,14 @@ export default function AdminDashboard() {
       alert(err.message);
     }
   };
-
+  const handleViewQuizResult = async (appointmentId) => {
+    try {
+      const result = await api.getAppointmentQuizResult(appointmentId);
+      if (result.success) setQuizResult(result);
+    } catch (err) {
+      alert(err.message || 'Could not load quiz results.');
+    }
+  };
   // Handle Appointment Status Update (e.g. mark COMPLETED)
   const handleUpdateStatus = async (id, status) => {
     try {
@@ -927,6 +935,7 @@ export default function AdminDashboard() {
         {/* TAB 2: APPOINTMENTS MANAGEMENT */}
         {/* ======================================================== */}
         {activeTab === 'appointments' && (
+
           <div className="glass-panel" style={{ padding: '32px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', marginBottom: '24px' }}>
               <div>
@@ -976,6 +985,7 @@ export default function AdminDashboard() {
                     <th>Time</th>
                     <th>Duration</th>
                     <th>Status</th>
+                    <th>Quiz</th>
                     <th>Resume (PDF)</th>
                     <th>Actions</th>
                   </tr>
@@ -984,7 +994,7 @@ export default function AdminDashboard() {
                 <tbody>
                   {filteredAppointments.length === 0 ? (
                     <tr>
-                      <td colSpan="9" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
+                      <td colSpan="10" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
                         No appointments match current filter.
                       </td>
                     </tr>
@@ -1010,6 +1020,20 @@ export default function AdminDashboard() {
                               </>
                             );
                           })()}
+                        </td>
+                        <td>
+                          {appt.quizSummary?.status === 'completed' ? (
+                            <button
+                              className="btn btn-secondary btn-sm"
+                              onClick={() => handleViewQuizResult(appt._id)}
+                            >
+                              {appt.quizSummary.score}/{appt.quizSummary.questionCount}
+                            </button>
+                          ) : appt.quizSummary?.status === 'in_progress' ? (
+                            'In progress'
+                          ) : (
+                            'Not started'
+                          )}
                         </td>
                         <td>
                           <button
@@ -1142,6 +1166,26 @@ export default function AdminDashboard() {
                 </tbody>
               </table>
             </div>
+            {quizResult && (
+              <div className="glass-panel" style={{ padding: '24px', marginTop: '20px' }}>
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => setQuizResult(null)}
+                >
+                  Close results
+                </button>
+                <h3>Quiz score: {quizResult.score}/{quizResult.totalQuestions}</h3>
+                {quizResult.results?.map((item) => (
+                  <div key={item.questionNumber} style={{ padding: '12px 0', borderTop: '1px solid var(--border-subtle)' }}>
+                    <strong>Question {item.questionNumber} · {item.difficulty}</strong>
+                    <div>{item.question}</div>
+                    <div>Candidate answer: {item.options[item.selectedOptionIndex]}</div>
+                    <div>Correct answer: {item.options[item.correctOptionIndex]}</div>
+                    <div>{item.isCorrect ? 'Correct' : 'Incorrect'} · {item.explanation}</div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -1163,6 +1207,7 @@ export default function AdminDashboard() {
                     title: 'System Design Deep-Dive',
                     description: 'Comprehensive 45-minute architectural simulation for L5/L6 senior candidates.',
                     duration: 30,
+                    quizQuestionCount: 5,
                     sessionType: 'SYSTEM_DESIGN',
                     calendlyEventUrl: integration?.calendly30MinUrl || 'https://calendly.com/interview-counsellor/30-min-mock-interview-training',
                     status: 'ACTIVE',
@@ -1768,6 +1813,23 @@ export default function AdminDashboard() {
                   </select>
                 </div>
               </div>
+              <div className="form-group">
+  <label className="form-label">Quiz questions</label>
+  <select
+    className="form-select"
+    value={editingSession.quizQuestionCount ?? 5}
+    onChange={(e) =>
+      setEditingSession({
+        ...editingSession,
+        quizQuestionCount: Number(e.target.value),
+      })
+    }
+  >
+    <option value={3}>3 questions</option>
+    <option value={5}>5 questions</option>
+    <option value={10}>10 questions</option>
+  </select>
+</div>
 
               <div className="form-group">
                 <label className="form-label">Calendly Event URL</label>

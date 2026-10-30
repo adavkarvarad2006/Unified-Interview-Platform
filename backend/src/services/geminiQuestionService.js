@@ -191,7 +191,7 @@ async function generateQuestions(values, clientOverride = null) {
   const apiKey = process.env.GEMINI_API_KEY;
 
   if (!clientOverride && !apiKey) {
-    console.warn('[Gemini Service] GEMINI_API_KEY not configured in backend/.env. Using verified offline placement question bank generator.');
+    console.warn('[Gemini Service] GEMINI_API_KEY is not configured. Using the offline question bank generator.');
     return generateDeterministicQuestions(values);
   }
 
@@ -205,8 +205,13 @@ async function generateQuestions(values, clientOverride = null) {
     `Selected domains: ${values.domainMode === 'random' ? 'Random from the allowed CSE domains' : values.domains.join(', ')}`,
   ].join('\n');
 
-  const primaryModel = process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite';
-  const models = Array.from(new Set([primaryModel, 'gemini-3.5-flash-lite', 'gemini-3.5-flash', 'gemini-flash-latest']));
+  const primaryModel = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
+  const models = Array.from(new Set([
+    primaryModel,
+    'gemini-3.8-flash',
+    'gemini-3.7-flash',
+    'gemini-3.5-flash-lite',
+  ]));
 
   let response;
   let lastCause;
@@ -265,7 +270,12 @@ async function generateInstantQuiz({ topic = 'Data Structures & Algorithms', dif
 
   if (engine !== 'offline' && apiKey) {
     const client = new GoogleGenAI({ apiKey, httpOptions: { timeout: 45000 } });
-    const models = Array.from(new Set(['gemini-3.5-flash-lite', process.env.GEMINI_MODEL, 'gemini-3.5-flash', 'gemini-flash-latest'])).filter(Boolean);
+    const models = Array.from(new Set([
+      process.env.GEMINI_MODEL || 'gemini-3.8-flash',
+      'gemini-3.8-flash',
+      'gemini-3.7-flash',
+      'gemini-3.5-flash-lite',
+    ]));
 
     const prompt = `Generate exactly ${count} multiple-choice quiz questions for a software engineering technical interview assessment.
 Topic: "${topic}".

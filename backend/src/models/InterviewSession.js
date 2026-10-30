@@ -17,6 +17,11 @@ const interviewSessionSchema = new mongoose.Schema(
       enum: [15, 30, 45, 60],
       default: 15
     },
+    quizQuestionCount: {
+      type: Number,
+      enum: [3, 5, 10],
+      default: 5,
+    },
     sessionType: {
       type: String,
       required: [true, 'Please provide session type'],
