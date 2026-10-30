@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { 
   LogIn, 
@@ -27,6 +27,7 @@ export default function LoginPage({ initialPortal = 'STUDENT' }) {
 
   const { login, loginAsDemo } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
   // Switch to Admin Portal
   const switchToAdmin = () => {
@@ -51,7 +52,12 @@ export default function LoginPage({ initialPortal = 'STUDENT' }) {
     if (userData.role === 'ADMIN' || userData.role === 'COUNSELLOR') {
       navigate('/admin');
     } else {
-      navigate('/student');
+      const redirectTo = location.state?.redirectTo;
+      navigate(
+        typeof redirectTo === 'string' && redirectTo.startsWith('/placements?tab=ai-quiz&autostart=1')
+          ? redirectTo
+          : '/student'
+      );
     }
   };
 

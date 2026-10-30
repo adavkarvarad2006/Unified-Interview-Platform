@@ -2,6 +2,7 @@ const Appointment = require('../models/Appointment');
 const Notification = require('../models/Notification');
 const User = require('../models/User');
 const Student = require('../models/Student');
+const { getQuizSummaryMap } = require('../services/interviewQuizService');
 const path = require('path');
 const fs = require('fs');
 const { 
@@ -128,14 +129,54 @@ const getAllAppointments = async (req, res) => {
 
     const total = await Appointment.countDocuments(filter);
     const enriched = await enrichAppointments(appointments);
+    const quizSummaryMap = await getQuizSummaryMap(
+      appointments.map((appointment) => appointment._id)
+    );
+    const data = enriched.map((appointment) => ({
+      ...appointment,
+      quizSummary: quizSummaryMap[String(appointment._id)] || {
+        status: 'not_started',
+      },
+    }));
 
     res.json({
       success: true,
       total,
-      count: enriched.length,
+      count: data.length,
       page: Number(page),
-      data: enriched
+      data
     });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @desc    Resolve the stored appointment after a Calendly browser event
+// @route   GET /api/appointments/by-calendly-invitee?inviteeUri=...
+// @access  Private (appointment owner)
+const getAppointmentByCalendlyInvitee = async (req, res) => {
+  try {
+    const inviteeUri = String(req.query.inviteeUri || '').trim();
+    if (!inviteeUri) {
+      return res.status(400).json({ success: false, message: 'inviteeUri is required' });
+    }
+
+    const ownership = [];
+    const userId = req.user.id || req.user._id;
+    const email = req.user.email?.toLowerCase();
+    if (userId) ownership.push({ studentId: userId });
+    if (email) ownership.push({ studentEmail: email });
+
+    const appointment = await Appointment.findOne({
+      calendlyInviteeId: inviteeUri,
+      $or: ownership,
+    }).select('_id');
+
+    if (!appointment) {
+      return res.status(404).json({ success: false, message: 'Booking is not available yet' });
+    }
+
+    res.json({ success: true, appointmentId: String(appointment._id) });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -492,6 +533,7 @@ const getAppointmentResume = async (req, res) => {
 module.exports = {
   getMyAppointments,
   getAllAppointments,
+  getAppointmentByCalendlyInvitee,
   getAppointmentById,
   updateAppointmentStatus,
   cancelAppointment,

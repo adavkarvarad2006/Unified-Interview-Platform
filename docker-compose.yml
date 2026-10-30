@@ -11,6 +11,8 @@ services:
       - MONGO_URI=mongodb://mongo:27017/interview_counselling_db
       - JWT_SECRET=change_this_to_a_secure_random_string_in_production
       - CLIENT_URL=http://localhost:5000
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-3.8-flash}
       - CALENDLY_API_KEY=${CALENDLY_API_KEY:-}
       - CALENDLY_WEBHOOK_SIGNING_KEY=${CALENDLY_WEBHOOK_SIGNING_KEY:-}
       - CALENDLY_15_MIN_URL=${CALENDLY_15_MIN_URL:-https://calendly.com/interview-counsellor/15-min-interview-counselling}

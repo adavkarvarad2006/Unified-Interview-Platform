@@ -80,6 +80,8 @@ export const api = {
   // Appointments
   getMyAppointments: () => request('/appointments/my'),
   getAllAppointments: (params = '') => request(`/appointments${params ? `?${params}` : ''}`),
+  getAppointmentByCalendlyInvitee: (inviteeUri) =>
+    request(`/appointments/by-calendly-invitee?inviteeUri=${encodeURIComponent(inviteeUri)}`),
   getAppointment: (id) => request(`/appointments/${id}`),
   updateAppointmentStatus: (id, data) => request(`/appointments/${id}/status`, { method: 'PATCH', body: JSON.stringify(data) }),
   updateAppointmentContext: (id, data) => request(`/appointments/${id}/context`, { method: 'PATCH', body: JSON.stringify(data) }),
@@ -140,6 +142,15 @@ export const api = {
   createPlacement: (data) => request('/placements', { method: 'POST', body: JSON.stringify(data) }),
   getPlacementApplicants: (id, order = 'highest') => request(`/placements/${id}/applicants?order=${order}`),
   registerForPlacement: (id) => request(`/placements/${id}/register`, { method: 'POST' }),
+  startAppointmentQuiz: (id) =>
+    request(`/interview-quizzes/${id}/start`, { method: 'POST' }),
+  answerAppointmentQuiz: (id, data) =>
+    request(`/interview-quizzes/${id}/answer`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  getAppointmentQuizResult: (id) =>
+    request(`/interview-quizzes/${id}/result`),
   getCandidateApplications: () => request('/applications/mine'),
   startCandidateQuiz: (applicationId) => request(`/applications/${applicationId}/start`, { method: 'POST' }),
   submitCandidateAnswer: (applicationId, data) => request(`/applications/${applicationId}/answer`, { method: 'POST', body: JSON.stringify(data) }),

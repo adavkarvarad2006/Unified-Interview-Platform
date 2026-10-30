@@ -54,6 +54,7 @@ export default function PlacementPracticePage() {
   const { user, isAdmin } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const urlTab = searchParams.get('tab');
+  const autoStartBookingQuiz = searchParams.get('autostart') === '1';
   const [activeTab, setActiveTab] = useState(urlTab || 'browse'); // 'browse', 'ai-quiz', 'simulator', 'applications', 'host'
 
   useEffect(() => {
@@ -81,6 +82,17 @@ export default function PlacementPracticePage() {
   const [aiEngine, setAiEngine] = useState('gemini'); // 'gemini' | 'offline'
   const [generatingAiQuiz, setGeneratingAiQuiz] = useState(false);
   const [aiQuizData, setAiQuizData] = useState(null); // { questions, topic, difficulty, engineUsed }
+  const autoStartQuizRef = useRef(false);
+  const [bookingQuizAppointmentId, setBookingQuizAppointmentId] = useState(
+    searchParams.get('appointmentId') || ''
+  );
+  const [bookingQuiz, setBookingQuiz] = useState(null);
+  const [bookingQuizLoading, setBookingQuizLoading] = useState(false);
+  const [bookingQuizSubmitting, setBookingQuizSubmitting] = useState(false);
+  const [bookingQuizError, setBookingQuizError] = useState('');
+  const [bookingQuizFeedback, setBookingQuizFeedback] = useState(null);
+  const [bookingQuizFinalResult, setBookingQuizFinalResult] = useState(null);
+  const [bookingQuizNextQuestion, setBookingQuizNextQuestion] = useState(null);
   const [aiQuizIndex, setAiQuizIndex] = useState(0);
   const [aiQuizScore, setAiQuizScore] = useState(0);
   const [aiSelectedOption, setAiSelectedOption] = useState(null);
@@ -200,6 +212,49 @@ export default function PlacementPracticePage() {
     }
   }, [user, isAdmin]);
 
+  useEffect(() => {
+    if (!autoStartBookingQuiz || autoStartQuizRef.current) return;
+
+    const appointmentId = searchParams.get('appointmentId');
+    const inviteeUri = searchParams.get('inviteeUri');
+    if (!appointmentId && !inviteeUri) {
+      setBookingQuizError('The booking reference is missing, so the quiz cannot start.');
+      return;
+    }
+
+    autoStartQuizRef.current = true;
+    setBookingQuizLoading(true);
+    setBookingQuizError('');
+
+    const startQuiz = async () => {
+      try {
+        let resolvedAppointmentId = appointmentId;
+        if (!resolvedAppointmentId && inviteeUri) {
+          const lookup = await api.getAppointmentByCalendlyInvitee(inviteeUri);
+          resolvedAppointmentId = lookup.appointmentId;
+        }
+
+        if (!resolvedAppointmentId) {
+          throw new Error('Could not find the booking for this quiz.');
+        }
+
+        setBookingQuizAppointmentId(resolvedAppointmentId);
+        const result = await api.startAppointmentQuiz(resolvedAppointmentId);
+        if (!result.success) {
+          throw new Error(result.message || 'Could not start the quiz.');
+        }
+        setBookingQuiz(result);
+      } catch (err) {
+        autoStartQuizRef.current = false;
+        setBookingQuizError(err.message || 'Could not start the quiz.');
+      } finally {
+        setBookingQuizLoading(false);
+      }
+    };
+
+    void startQuiz();
+  }, [autoStartBookingQuiz, searchParams]);
+
   // Instant AI Quiz Generator Handlers
   const handleGenerateAiQuiz = async (e) => {
     if (e) e.preventDefault();
@@ -227,13 +282,13 @@ export default function PlacementPracticePage() {
       } else {
         setActionError(res.message || 'Failed to generate questions. Please try another topic.');
       }
+
     } catch (err) {
       setActionError(err.message || 'Failed to generate AI quiz.');
     } finally {
       setGeneratingAiQuiz(false);
     }
   };
-
   const handleSelectAiOption = (optionIndex) => {
     if (aiAnswerRevealed || !aiQuizData) return;
     const currentQ = aiQuizData.questions[aiQuizIndex];
@@ -257,6 +312,57 @@ export default function PlacementPracticePage() {
         explanation: currentQ.explanation,
       },
     ]);
+  };
+
+  const handleSubmitBookingQuizAnswer = async (selectedOptionIndex) => {
+    if (
+      !bookingQuizAppointmentId ||
+      !bookingQuiz?.question ||
+      bookingQuizSubmitting ||
+      bookingQuizFeedback
+    ) return;
+
+    setBookingQuizSubmitting(true);
+    setBookingQuizError('');
+    try {
+      const result = await api.answerAppointmentQuiz(bookingQuizAppointmentId, {
+        questionIndex: bookingQuiz.question.questionNumber - 1,
+        selectedOptionIndex,
+      });
+
+      if (!result.success) {
+        throw new Error(result.message || 'Could not submit your answer.');
+      }
+
+      setBookingQuizFeedback({ ...result, selectedOptionIndex });
+      if (result.completed) {
+        setBookingQuizFinalResult(result);
+      } else {
+        setBookingQuizNextQuestion(result.nextQuestion);
+      }
+    } catch (err) {
+      setBookingQuizError(err.message || 'Could not submit your answer.');
+    } finally {
+      setBookingQuizSubmitting(false);
+    }
+  };
+
+  const handleContinueBookingQuiz = () => {
+    if (!bookingQuizNextQuestion || !bookingQuizFeedback) return;
+    setBookingQuiz((current) => ({
+      ...current,
+      score: bookingQuizFeedback.score,
+      question: bookingQuizNextQuestion,
+    }));
+    setBookingQuizFeedback(null);
+    setBookingQuizNextQuestion(null);
+  };
+
+  const handleViewBookingQuizResults = () => {
+    if (!bookingQuizFinalResult) return;
+    setBookingQuiz(bookingQuizFinalResult);
+    setBookingQuizFeedback(null);
+    setBookingQuizFinalResult(null);
   };
 
   const handleNextAiQuestion = () => {
@@ -710,8 +816,126 @@ export default function PlacementPracticePage() {
         </div>
       )}
 
+      {activeTab === 'ai-quiz' && autoStartBookingQuiz && (
+        <div className="glass-panel" style={{ padding: '32px', maxWidth: '840px', margin: '0 auto' }}>
+          {bookingQuizLoading && <p>Preparing your interview quiz…</p>}
+
+          {bookingQuizError && (
+            <div role="alert" style={{ color: '#fb7185', marginBottom: '16px' }}>
+              {bookingQuizError}
+              <button className="btn btn-secondary btn-sm" onClick={() => window.location.reload()} style={{ marginLeft: '12px' }}>
+                Retry
+              </button>
+            </div>
+          )}
+
+          {bookingQuiz?.completed && (
+            <div>
+              <h2>Interview quiz results</h2>
+              <p>Score: {bookingQuiz.score}/{bookingQuiz.totalQuestions}</p>
+              {bookingQuiz.results?.map((item) => (
+                <div key={item.questionNumber} style={{ borderTop: '1px solid var(--border-subtle)', padding: '14px 0' }}>
+                  <strong>Question {item.questionNumber} · {item.difficulty}</strong>
+                  <p>{item.question}</p>
+                  <p>Candidate answer: {item.options[item.selectedOptionIndex]}</p>
+                  <p>Correct answer: {item.options[item.correctOptionIndex]}</p>
+                  <p>{item.isCorrect ? 'Correct' : 'Incorrect'} · {item.explanation}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {!bookingQuizLoading && !bookingQuiz?.completed && bookingQuiz?.question && (
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}>
+                <strong>Question {bookingQuiz.question.questionNumber} of {bookingQuiz.question.totalQuestions}</strong>
+                <span className="badge badge-primary">{bookingQuiz.question.difficulty}</span>
+              </div>
+              <h2 style={{ marginBottom: '20px' }}>{bookingQuiz.question.question}</h2>
+              <div style={{ display: 'grid', gap: '10px' }}>
+                {bookingQuiz.question.options.map((option, index) => {
+                  const isCorrectOption =
+                    Boolean(bookingQuizFeedback) &&
+                    bookingQuizFeedback.correctOptionIndex === index;
+                  const isIncorrectSelection =
+                    Boolean(bookingQuizFeedback) &&
+                    !bookingQuizFeedback.isCorrect &&
+                    bookingQuizFeedback.selectedOptionIndex === index;
+
+                  return (
+                    <button
+                      key={`${bookingQuiz.question.questionNumber}-${index}`}
+                      type="button"
+                      className="btn btn-secondary"
+                      disabled={bookingQuizSubmitting || Boolean(bookingQuizFeedback)}
+                      onClick={() => handleSubmitBookingQuizAnswer(index)}
+                      style={{
+                        display: 'flex',
+                        width: '100%',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: '12px',
+                        textAlign: 'left',
+                        backgroundColor: isCorrectOption
+                          ? 'rgba(34, 197, 94, 0.18)'
+                          : isIncorrectSelection
+                            ? 'rgba(239, 68, 68, 0.18)'
+                            : undefined,
+                        borderColor: isCorrectOption
+                          ? '#22c55e'
+                          : isIncorrectSelection
+                            ? '#ef4444'
+                            : undefined,
+                        color: isCorrectOption
+                          ? '#bbf7d0'
+                          : isIncorrectSelection
+                            ? '#fecaca'
+                            : undefined,
+                        boxShadow: isCorrectOption
+                          ? '0 0 0 1px rgba(34, 197, 94, 0.25)'
+                          : isIncorrectSelection
+                            ? '0 0 0 1px rgba(239, 68, 68, 0.25)'
+                            : undefined,
+                      }}
+                    >
+                      <span>{String.fromCharCode(65 + index)}. {option}</span>
+                      {isCorrectOption && (
+                        <span aria-label="Correct answer" style={{ color: '#4ade80', fontWeight: 800 }}>
+                          ✓
+                        </span>
+                      )}
+                      {isIncorrectSelection && (
+                        <span aria-label="Incorrect selection" style={{ color: '#f87171', fontWeight: 800 }}>
+                          ✕
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {bookingQuizFeedback && (
+                <div style={{ marginTop: '18px' }}>
+                  <strong>{bookingQuizFeedback.isCorrect ? 'Correct answer' : 'Incorrect answer'}</strong>
+                  <p>{bookingQuizFeedback.explanation}</p>
+                  {bookingQuizFinalResult ? (
+                    <button type="button" className="btn btn-primary" onClick={handleViewBookingQuizResults}>
+                      View quiz results
+                    </button>
+                  ) : !bookingQuiz?.completed && (
+                    <button type="button" className="btn btn-primary" onClick={handleContinueBookingQuiz}>
+                      Next question
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* TAB 0: ON-DEMAND INSTANT AI QUIZ GENERATOR */}
-      {activeTab === 'ai-quiz' && (
+      {activeTab === 'ai-quiz' && !autoStartBookingQuiz && (
         <div>
           {!aiQuizData ? (
             /* Quiz Generator Configuration Card */

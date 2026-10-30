@@ -158,6 +158,7 @@ export default function BookingPage() {
     }
 
     let googleMeetLink = '';
+    let appointmentId = '';
 
     // If simulated or triggered via direct scheduler, send webhook payload to backend
     if (eventData.isSimulated || eventData.isDirectBooking) {
@@ -175,6 +176,7 @@ export default function BookingPage() {
           githubUrl,
           linkedinUrl
         });
+        appointmentId = webhookRes?.appointmentId || webhookRes?.data?._id || '';
         if (webhookRes?.googleMeetLink) {
           googleMeetLink = webhookRes.googleMeetLink;
         } else if (webhookRes?.data?.googleMeetLink) {
@@ -186,15 +188,52 @@ export default function BookingPage() {
       }
     }
 
+    const inviteeUri = eventData.inviteeUri || eventData.rawPayload?.invitee?.uri || '';
+
+    // Calendly's webhook is asynchronous. Resolve its invitee URI to the
+    // appointment record before starting the appointment-linked quiz.
+    if (!appointmentId && inviteeUri && user) {
+      for (let attempt = 0; attempt < 10 && !appointmentId; attempt += 1) {
+        try {
+          const resolved = await api.getAppointmentByCalendlyInvitee(inviteeUri);
+          appointmentId = resolved.appointmentId || '';
+        } catch (err) {
+          if (attempt === 9) {
+            console.error('Could not resolve the Calendly appointment:', err);
+          }
+        }
+
+        if (!appointmentId && attempt < 9) {
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        }
+      }
+    }
+
     if (!googleMeetLink) {
       // Reliable fallback Google Meet link generator
       const chars = 'abcdefghijklmnopqrstuvwxyz';
       const r = (n) => Array.from({ length: n }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
       googleMeetLink = `https://meet.google.com/${r(3)}-${r(4)}-${r(3)}`;
     }
+    const quizPath = appointmentId
+      ? `/placements?tab=ai-quiz&autostart=1&appointmentId=${encodeURIComponent(appointmentId)}`
+      : `/placements?tab=ai-quiz&autostart=1&inviteeUri=${encodeURIComponent(inviteeUri)}`;
 
-    // Redirect to confirmation screen as specified in student experience requirements
-    navigate('/booking-confirmation', {
+    if (!user && !appointmentId && !inviteeUri) {
+      throw new Error('Booking completed, but the quiz could not be linked to the booking.');
+    }
+
+    if (!user) {
+      navigate('/login', { state: { redirectTo: quizPath } });
+      return;
+    }
+
+    if (!appointmentId) {
+      throw new Error('Booking completed, but its appointment record is not available yet. Please try again shortly.');
+    }
+
+    // Start the appointment-linked quiz immediately after booking.
+    navigate(quizPath, {
       state: {
         sessionTitle: activeSession.title,
         duration: activeSession.duration,

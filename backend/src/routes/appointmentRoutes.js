@@ -3,6 +3,7 @@ const router = express.Router();
 const {
   getMyAppointments,
   getAllAppointments,
+  getAppointmentByCalendlyInvitee,
   getAppointmentById,
   updateAppointmentStatus,
   cancelAppointment,
@@ -14,6 +15,7 @@ const { protect, authorize } = require('../middleware/auth');
 
 router.get('/my', protect, getMyAppointments);
 router.get('/', protect, authorize('ADMIN', 'COUNSELLOR'), getAllAppointments);
+router.get('/by-calendly-invitee', protect, getAppointmentByCalendlyInvitee);
 router.get('/:id/resume', getAppointmentResume);
 router.get('/:id', protect, getAppointmentById);
 router.patch('/:id/status', protect, authorize('ADMIN', 'COUNSELLOR'), updateAppointmentStatus);
