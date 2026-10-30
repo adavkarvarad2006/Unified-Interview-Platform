@@ -1,6 +1,7 @@
 const Appointment = require('../models/Appointment');
+const InterviewSession = require('../models/InterviewSession');
 const InterviewQuizAttempt = require('../models/InterviewQuizAttempt');
-const { generateQuestions } = require('./geminiQuestionService');
+const { generateSessionQuizQuestionBank } = require('./sessionQuizQuestionBankService');
 const {
   difficultyIndex,
   selectInitialQuestion,
@@ -18,7 +19,10 @@ function getUserId(user) {
 }
 
 async function loadAppointmentForCandidate(appointmentId, user) {
-  const appointment = await Appointment.findById(appointmentId).populate('sessionId');
+  const appointment = await Appointment.findById(appointmentId).populate({
+    path: 'sessionId',
+    select: '+quizQuestionBank',
+  });
 
   if (!appointment) {
     throw serviceError('Appointment not found', 404);
@@ -41,6 +45,54 @@ async function loadAppointmentForCandidate(appointmentId, user) {
   }
 
   return appointment;
+}
+
+const questionBankGenerationBySession = new Map();
+
+async function getSessionQuestionBank(session, questionCount) {
+  const expectedSize = questionCount * 3;
+  if (session?.quizQuestionBank?.length === expectedSize) {
+    return session.quizQuestionBank;
+  }
+
+  if (!session?._id) {
+    return generateSessionQuizQuestionBank({ ...session, quizQuestionCount: questionCount });
+  }
+
+  const sessionId = String(session._id);
+  const generationInProgress = questionBankGenerationBySession.get(sessionId);
+  if (generationInProgress) return generationInProgress;
+
+  const generation = (async () => {
+    const latestSession = await InterviewSession.findById(session._id).select('+quizQuestionBank');
+    if (latestSession?.quizQuestionBank?.length === expectedSize) {
+      return latestSession.quizQuestionBank;
+    }
+
+    // Legacy sessions get a one-time backfill. New sessions already have this bank
+    // because session creation generates and stores it before making it bookable.
+    const questionBank = await generateSessionQuizQuestionBank({
+      ...(latestSession ? latestSession.toObject() : session),
+      quizQuestionCount: questionCount,
+    });
+
+    const savedSession = await InterviewSession.findByIdAndUpdate(
+      session._id,
+      { $set: { quizQuestionBank: questionBank } },
+      { new: true }
+    ).select('+quizQuestionBank');
+
+    return savedSession?.quizQuestionBank?.length === expectedSize
+      ? savedSession.quizQuestionBank
+      : questionBank;
+  })();
+
+  questionBankGenerationBySession.set(sessionId, generation);
+  try {
+    return await generation;
+  } finally {
+    questionBankGenerationBySession.delete(sessionId);
+  }
 }
 
 function publicQuestion(attempt) {
@@ -109,31 +161,7 @@ async function getOrStartAppointmentQuiz(appointmentId, user) {
   }
 
   const questionCount = appointment.sessionId?.quizQuestionCount || 5;
-
-  const domainsBySessionType = {
-    SYSTEM_DESIGN: ['System Design'],
-    MOCK_INTERVIEW: ['Data Structures', 'Algorithms', 'OOP'],
-    RESUME_REVIEW: ['Software Engineering', 'Git & Version Control'],
-    COUNSELLING: ['Data Structures', 'Algorithms'],
-  };
-
-  const domains =
-    domainsBySessionType[appointment.sessionType] ||
-    domainsBySessionType.COUNSELLING;
-
-  // generateQuestions creates questionCount questions at each difficulty:
-  // questionCount easy, questionCount medium, and questionCount hard.
-  const questionBank = await generateQuestions({
-    title: appointment.sessionTitle,
-    companyName: 'Interview Preparation',
-    description: `Generate interview practice questions for a ${appointment.sessionType || 'general'} session.`,
-    location: 'Online',
-    domainMode: 'specific',
-    domains,
-    questionCount,
-    difficulty: 'easy',
-    randomnessPercent: 0,
-  });
+  const questionBank = await getSessionQuestionBank(appointment.sessionId, questionCount);
 
   const firstQuestionIndex = selectInitialQuestion(questionBank, 'easy');
 

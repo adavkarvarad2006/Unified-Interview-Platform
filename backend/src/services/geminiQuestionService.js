@@ -206,12 +206,10 @@ async function generateQuestions(values, clientOverride = null) {
   ].join('\n');
 
   const primaryModel = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
-  const models = Array.from(new Set([
-    primaryModel,
-    'gemini-3.8-flash',
-    'gemini-3.7-flash',
-    'gemini-3.5-flash-lite',
-  ]));
+  const fallbackModel = primaryModel === 'gemini-3.5-flash-lite'
+    ? 'gemini-3.8-flash'
+    : 'gemini-3.5-flash-lite';
+  const models = Array.from(new Set([primaryModel, fallbackModel]));
 
   let response;
   let lastCause;
