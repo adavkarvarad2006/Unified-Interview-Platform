@@ -24,7 +24,12 @@ import {
   BookOpen,
   Cpu,
   RotateCcw,
-  Check
+  Check,
+  Download,
+  Bot,
+  FileText,
+  Terminal,
+  MessageSquare
 } from 'lucide-react';
 
 const placementDomains = [
@@ -49,10 +54,10 @@ export default function PlacementPracticePage() {
   const { user, isAdmin } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const urlTab = searchParams.get('tab');
-  const [activeTab, setActiveTab] = useState(urlTab || 'browse'); // 'browse', 'ai-quiz', 'applications', 'host'
+  const [activeTab, setActiveTab] = useState(urlTab || 'browse'); // 'browse', 'ai-quiz', 'simulator', 'applications', 'host'
 
   useEffect(() => {
-    if (urlTab && ['browse', 'ai-quiz', 'applications', 'host'].includes(urlTab)) {
+    if (urlTab && ['browse', 'ai-quiz', 'simulator', 'applications', 'host'].includes(urlTab)) {
       setActiveTab(urlTab);
     }
   }, [urlTab]);
@@ -82,6 +87,18 @@ export default function PlacementPracticePage() {
   const [aiAnswerRevealed, setAiAnswerRevealed] = useState(false);
   const [aiQuizFinished, setAiQuizFinished] = useState(false);
   const [aiHistory, setAiHistory] = useState([]);
+
+  // AI Mock Interview Simulator State
+  const [simTopic, setSimTopic] = useState('System Design');
+  const [simCustomTopic, setSimCustomTopic] = useState('');
+  const [simType, setSimType] = useState('system_design');
+  const [simLevel, setSimLevel] = useState('Senior / FAANG Standard');
+  const [simQuestion, setSimQuestion] = useState(null);
+  const [simResponse, setSimResponse] = useState('');
+  const [simLoadingQuestion, setSimLoadingQuestion] = useState(false);
+  const [simEvaluating, setSimEvaluating] = useState(false);
+  const [simEvaluation, setSimEvaluation] = useState(null);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
 
   // Host Preview AI Questions State
   const [previewingAi, setPreviewingAi] = useState(false);
@@ -295,6 +312,131 @@ export default function PlacementPracticePage() {
     }
   };
 
+  // AI Mock Interview Simulator Handlers
+  const handleGenerateSimQuestion = async (overrideTopic, overrideType) => {
+    const finalTopic = overrideTopic || simCustomTopic.trim() || simTopic;
+    const finalType = overrideType || simType;
+    setSimLoadingQuestion(true);
+    setActionError('');
+    try {
+      const res = await api.generateMockInterviewQuestion({
+        topic: finalTopic,
+        type: finalType,
+        level: simLevel
+      });
+      if (res && res.title) {
+        setSimQuestion(res);
+        setSimResponse('');
+        setSimEvaluation(null);
+      } else {
+        setActionError('Failed to generate interview scenario. Please try again.');
+      }
+    } catch (err) {
+      setActionError(err.message || 'Error generating interview scenario.');
+    } finally {
+      setSimLoadingQuestion(false);
+    }
+  };
+
+  const handleEvaluateSimResponse = async (e) => {
+    if (e) e.preventDefault();
+    if (!simQuestion) return;
+    if (simResponse.trim().length < 25) {
+      setActionError('Please provide a more detailed technical response (at least 25 characters) for AI evaluation.');
+      return;
+    }
+
+    setSimEvaluating(true);
+    setActionError('');
+    try {
+      const res = await api.evaluateMockInterviewResponse({
+        questionId: simQuestion.questionId,
+        title: simQuestion.title,
+        scenario: simQuestion.scenario,
+        prompt: simQuestion.prompt,
+        keyFocusAreas: simQuestion.keyFocusAreas,
+        candidateResponse: simResponse,
+        role: simLevel,
+        candidateName: user?.name || 'Student Candidate',
+        candidateEmail: user?.email || 'student@domain.com'
+      });
+      if (res && res.verdict) {
+        setSimEvaluation(res);
+      } else {
+        setActionError('Evaluation could not be processed. Please retry.');
+      }
+    } catch (err) {
+      setActionError(err.message || 'Failed to evaluate interview response.');
+    } finally {
+      setSimEvaluating(false);
+    }
+  };
+
+  const handleDownloadSimPdf = async () => {
+    if (!simQuestion || !simEvaluation) return;
+    setDownloadingPdf(true);
+    try {
+      await api.downloadAssessmentReport(
+        {
+          candidateName: user?.name || 'Candidate Student',
+          candidateEmail: user?.email || 'student@domain.com',
+          title: `AI Mock Interview: ${simQuestion.title}`,
+          type: `Interactive Simulator (${simQuestion.type.replace('_', ' ')})`,
+          topic: simQuestion.topic,
+          difficulty: simQuestion.level,
+          score: simEvaluation.overallScore,
+          total: 100,
+          percentage: simEvaluation.overallScore,
+          verdict: simEvaluation.verdict,
+          strengths: simEvaluation.strengths,
+          improvements: simEvaluation.improvements,
+          counsellorTip: simEvaluation.counsellorTip
+        },
+        `Mock_Interview_Scorecard_${Date.now()}.pdf`
+      );
+    } catch (err) {
+      setActionError('Error downloading PDF scorecard.');
+    } finally {
+      setDownloadingPdf(false);
+    }
+  };
+
+  const handleDownloadQuizPdf = async (customMeta, score, total, history = []) => {
+    setDownloadingPdf(true);
+    try {
+      const topicName = customMeta?.topic || 'Technical Assessment';
+      const difficulty = customMeta?.difficulty || 'medium';
+      const percent = Math.round((score / total) * 100);
+      const verdict = percent >= 80 ? 'Distinction' : percent >= 60 ? 'Proficient' : 'Needs Review';
+      
+      const strengths = history.filter(h => h.isCorrect).slice(0, 4).map(h => `Mastered: ${h.question.slice(0, 70)}...`);
+      const improvements = history.filter(h => !h.isCorrect).slice(0, 4).map(h => `Review needed: ${h.question.slice(0, 70)}...`);
+
+      await api.downloadAssessmentReport(
+        {
+          candidateName: user?.name || 'Candidate Student',
+          candidateEmail: user?.email || 'student@domain.com',
+          title: `Quiz Assessment: ${topicName}`,
+          type: `Multiple-Choice Assessment (${difficulty})`,
+          topic: topicName,
+          difficulty,
+          score,
+          total,
+          percentage: percent,
+          verdict,
+          strengths: strengths.length ? strengths : ['Demonstrated strong core knowledge.'],
+          improvements: improvements.length ? improvements : ['Review edge cases and deeper architectural patterns.'],
+          counsellorTip: 'Bring this assessment scorecard to your 1-on-1 session with Dr. Parkavi A. for tailored coaching.'
+        },
+        `Quiz_Assessment_${Date.now()}.pdf`
+      );
+    } catch (err) {
+      setActionError('Error generating quiz assessment PDF.');
+    } finally {
+      setDownloadingPdf(false);
+    }
+  };
+
   // Handle Candidate Registration
   const handleRegister = async (placement) => {
     if (!user) {
@@ -479,6 +621,18 @@ export default function PlacementPracticePage() {
         >
           <Sparkles size={16} color="#818cf8" />
           Generate AI Quiz
+        </button>
+
+        <button
+          className={`btn ${activeTab === 'simulator' ? 'btn-primary' : 'btn-secondary'}`}
+          onClick={() => {
+            setActiveTab('simulator');
+            setSearchParams({ tab: 'simulator' });
+          }}
+          style={{ fontSize: '0.88rem', borderColor: 'rgba(56, 189, 248, 0.45)' }}
+        >
+          <Bot size={16} color="#38bdf8" />
+          AI Mock Interviewer
         </button>
 
         <button
@@ -1026,6 +1180,15 @@ export default function PlacementPracticePage() {
                     <RotateCcw size={16} />
                     Retake This Quiz
                   </button>
+                  <button
+                    className="btn btn-outline"
+                    disabled={downloadingPdf}
+                    onClick={() => handleDownloadQuizPdf(aiQuizData, aiQuizScore, aiQuizData.questions.length, aiHistory)}
+                    style={{ borderColor: 'rgba(56, 189, 248, 0.4)', color: '#38bdf8' }}
+                  >
+                    <Download size={16} />
+                    {downloadingPdf ? 'Generating PDF...' : 'Download Assessment PDF'}
+                  </button>
                 </div>
               </div>
 
@@ -1066,6 +1229,536 @@ export default function PlacementPracticePage() {
                   ))}
                 </div>
               </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TAB 0.5: INTERACTIVE AI MOCK INTERVIEW SIMULATOR */}
+      {activeTab === 'simulator' && (
+        <div>
+          {!simQuestion ? (
+            /* Scenario Setup Screen */
+            <div className="glass-panel" style={{ padding: '32px', borderRadius: '20px', maxWidth: '860px', margin: '0 auto' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+                <div style={{
+                  width: '42px',
+                  height: '42px',
+                  borderRadius: '12px',
+                  background: 'rgba(56, 189, 248, 0.15)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  border: '1px solid rgba(56, 189, 248, 0.3)'
+                }}>
+                  <Bot size={22} color="#38bdf8" />
+                </div>
+                <div>
+                  <h2 style={{ fontSize: '1.6rem', fontWeight: 800, margin: 0 }}>
+                    AI Coding & Technical Interview Simulator
+                  </h2>
+                  <span style={{ fontSize: '0.78rem', color: '#38bdf8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                    Open-Ended Technical & Architecture Bar-Raiser
+                  </span>
+                </div>
+              </div>
+
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.92rem', marginBottom: '28px', lineHeight: 1.5 }}>
+                Practice real-world FAANG interview scenarios covering system architecture, algorithmic design, and production incident management. Type your technical breakdown and receive constructive evaluation, scores out of 100, and downloadable PDF reports.
+              </p>
+
+              {/* Quick Launch High-Impact Scenarios */}
+              <div style={{ marginBottom: '28px' }}>
+                <label style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-main)', display: 'block', marginBottom: '12px' }}>
+                  ⚡ Quick-Launch Popular FAANG Scenarios:
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px' }}>
+                  {[
+                    {
+                      topic: 'System Design',
+                      type: 'system_design',
+                      title: '🚀 High-Throughput URL Shortener',
+                      desc: 'Bitly Scale · Base62, 100:1 read ratio, Redis caching, async telemetry'
+                    },
+                    {
+                      topic: 'System Design & APIs',
+                      type: 'system_design',
+                      title: '🛡️ Distributed API Rate Limiter',
+                      desc: 'Sliding window, Token Bucket, Redis Lua scripts, DDoS resilience'
+                    },
+                    {
+                      topic: 'Data Structures & Concurrency',
+                      type: 'coding_architecture',
+                      title: '⚡ Thread-Safe In-Memory LRU Cache',
+                      desc: 'Hash map + Doubly linked list, O(1) get/put, stripped lock concurrency'
+                    },
+                    {
+                      topic: 'Concurrency & Incident Management',
+                      type: 'behavioral_project',
+                      title: '💥 Distributed Payment Deadlock Recovery',
+                      desc: 'Coffman conditions, lock graphs, Saga pattern vs 2-phase commit'
+                    }
+                  ].map((sc, idx) => (
+                    <div
+                      key={idx}
+                      onClick={() => handleGenerateSimQuestion(sc.topic, sc.type)}
+                      style={{
+                        padding: '16px',
+                        borderRadius: '12px',
+                        background: 'rgba(255, 255, 255, 0.03)',
+                        border: '1px solid var(--border-subtle)',
+                        cursor: simLoadingQuestion ? 'wait' : 'pointer',
+                        transition: 'all 0.15s ease'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.borderColor = '#38bdf8';
+                        e.currentTarget.style.background = 'rgba(56, 189, 248, 0.08)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.borderColor = 'var(--border-subtle)';
+                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)';
+                      }}
+                    >
+                      <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#fff', marginBottom: '4px' }}>
+                        {sc.title}
+                      </div>
+                      <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>
+                        {sc.desc}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Custom AI Scenario Form */}
+              <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '24px' }}>
+                <label style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-main)', display: 'block', marginBottom: '14px' }}>
+                  🛠️ Or Configure a Custom AI Interview Question:
+                </label>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px', marginBottom: '16px' }}>
+                  <div>
+                    <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '6px' }}>
+                      Interview Category
+                    </label>
+                    <select
+                      value={simType}
+                      onChange={(e) => setSimType(e.target.value)}
+                      className="input-field"
+                      style={{ width: '100%', fontSize: '0.85rem' }}
+                    >
+                      <option value="system_design">System Architecture & Scalability</option>
+                      <option value="coding_architecture">Coding & Algorithmic Architecture</option>
+                      <option value="behavioral_project">Production Incidents & Concurrency</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '6px' }}>
+                      Target Candidate Level
+                    </label>
+                    <select
+                      value={simLevel}
+                      onChange={(e) => setSimLevel(e.target.value)}
+                      className="input-field"
+                      style={{ width: '100%', fontSize: '0.85rem' }}
+                    >
+                      <option value="Senior / FAANG Standard">Senior / FAANG Bar-Raiser</option>
+                      <option value="Mid-Level Engineer">Mid-Level Software Engineer</option>
+                      <option value="University Placement">Campus Placement / Graduate</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div style={{ marginBottom: '20px' }}>
+                  <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '6px' }}>
+                    Custom Focus Topic or Technology (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Design WhatsApp Messaging with End-to-End Encryption, Redis Cache Stampede, Distributed Locking with Zookeeper..."
+                    value={simCustomTopic}
+                    onChange={(e) => setSimCustomTopic(e.target.value)}
+                    className="input-field"
+                    style={{ width: '100%', fontSize: '0.88rem' }}
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  disabled={simLoadingQuestion}
+                  onClick={() => handleGenerateSimQuestion()}
+                  className="btn btn-primary"
+                  style={{
+                    width: '100%',
+                    padding: '13px',
+                    fontSize: '0.95rem',
+                    fontWeight: 700,
+                    borderRadius: '12px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    background: 'linear-gradient(135deg, #0284c7, #06b6d4)'
+                  }}
+                >
+                  {simLoadingQuestion ? (
+                    <>
+                      <RefreshCw size={16} className="spin" /> Generating Interview Scenario with Gemini AI...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles size={16} /> Launch AI Interview Simulation
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          ) : (
+            /* Active Interview Workspace & Evaluation Screen */
+            <div style={{ maxWidth: '980px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+              {/* Top Navigation Bar */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => {
+                    setSimQuestion(null);
+                    setSimResponse('');
+                    setSimEvaluation(null);
+                  }}
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                >
+                  ← Choose Another Scenario
+                </button>
+
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                  <span className="badge badge-primary" style={{ fontSize: '0.72rem' }}>
+                    {simQuestion.type?.replace('_', ' ').toUpperCase()}
+                  </span>
+                  <span className="badge badge-cyan" style={{ fontSize: '0.72rem' }}>
+                    {simQuestion.level}
+                  </span>
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-dim)' }}>
+                    Engine: {simQuestion.engineUsed === 'gemini' ? '🤖 Gemini AI' : '⚡ Verified Bank'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Scenario Context & Question Card */}
+              <div className="glass-panel" style={{ padding: '28px', borderRadius: '18px', border: '1px solid var(--border-highlight)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                  <Terminal size={18} color="#38bdf8" />
+                  <span style={{ fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', color: '#38bdf8', letterSpacing: '0.06em' }}>
+                    Technical Interview Prompt
+                  </span>
+                </div>
+
+                <h2 style={{ fontSize: '1.5rem', fontWeight: 800, color: '#fff', margin: '0 0 14px 0' }}>
+                  {simQuestion.title}
+                </h2>
+
+                {/* Scenario details */}
+                <div style={{
+                  padding: '16px 20px',
+                  borderRadius: '12px',
+                  background: 'rgba(56, 189, 248, 0.08)',
+                  border: '1px solid rgba(56, 189, 248, 0.25)',
+                  marginBottom: '18px'
+                }}>
+                  <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#7dd3fc', textTransform: 'uppercase', marginBottom: '4px' }}>
+                    Context & System Requirements:
+                  </div>
+                  <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-main)', lineHeight: 1.5 }}>
+                    {simQuestion.scenario}
+                  </p>
+                </div>
+
+                {/* Prompt Question */}
+                <div style={{ marginBottom: '18px' }}>
+                  <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '6px' }}>
+                    Interviewer Questions:
+                  </div>
+                  <p style={{ margin: 0, fontSize: '0.92rem', color: '#e0e7ff', fontWeight: 600, lineHeight: 1.6 }}>
+                    {simQuestion.prompt}
+                  </p>
+                </div>
+
+                {/* Expected Key Focus Areas */}
+                {Array.isArray(simQuestion.keyFocusAreas) && simQuestion.keyFocusAreas.length > 0 && (
+                  <div>
+                    <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-dim)', marginBottom: '8px' }}>
+                      KEY EVALUATION CRITERIA:
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                      {simQuestion.keyFocusAreas.map((fa, i) => (
+                        <span key={i} style={{ fontSize: '0.74rem', padding: '4px 10px', borderRadius: '6px', background: 'rgba(255, 255, 255, 0.05)', color: '#cbd5e1', border: '1px solid var(--border-subtle)' }}>
+                          • {fa}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Candidate Typing Workspace (if not evaluated yet) */}
+              {!simEvaluation ? (
+                <div className="glass-panel" style={{ padding: '28px', borderRadius: '18px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                    <div>
+                      <h3 style={{ fontSize: '1.2rem', fontWeight: 700, margin: 0 }}>
+                        Your Technical Solution & Architectural Proposal
+                      </h3>
+                      <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', margin: '4px 0 0 0' }}>
+                        Break down your architecture, algorithms, API endpoints, persistence schema, trade-offs, and failure recoveries.
+                      </p>
+                    </div>
+                    <span style={{ fontSize: '0.78rem', color: 'var(--text-dim)' }}>
+                      {simResponse.trim().split(/\s+/).filter(Boolean).length} words · {simResponse.length} chars
+                    </span>
+                  </div>
+
+                  <form onSubmit={handleEvaluateSimResponse}>
+                    <textarea
+                      rows={12}
+                      value={simResponse}
+                      onChange={(e) => setSimResponse(e.target.value)}
+                      placeholder="Start drafting your solution here...
+
+1. High-Level Architecture & API Interface:
+   - Endpoint: POST /api/v1/shorten, GET /{alias}
+   - Encoding strategy: Base62 with distributed Snowflake 64-bit ID generator
+
+2. Data Storage & Schema:
+   - Database: NoSQL Key-Value (MongoDB / DynamoDB) with partition key on alias
+   - Estimated storage: 500M * 500B * 60mo ≈ 15TB
+
+3. Caching & Latency Optimization:
+   - Redis cluster with LRU eviction for top 20% hot URLs (<10ms P99)
+
+4. Failure Modes & Async Analytics:
+   - Redirection decoupled from metrics via Apache Kafka event stream"
+                      className="input-field"
+                      style={{
+                        width: '100%',
+                        fontFamily: 'var(--font-mono, monospace)',
+                        fontSize: '0.88rem',
+                        lineHeight: 1.5,
+                        padding: '16px',
+                        marginBottom: '18px',
+                        resize: 'vertical'
+                      }}
+                    />
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+                      <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                        💡 Tip: Quality, edge-case mitigation, and explicit trade-offs are valued over brevity.
+                      </span>
+
+                      <button
+                        type="submit"
+                        disabled={simEvaluating || simResponse.trim().length < 25}
+                        className="btn btn-primary"
+                        style={{
+                          padding: '12px 28px',
+                          fontWeight: 700,
+                          fontSize: '0.95rem',
+                          background: 'linear-gradient(135deg, #6366f1, #06b6d4)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px'
+                        }}
+                      >
+                        {simEvaluating ? (
+                          <>
+                            <RefreshCw size={16} className="spin" /> Evaluating with FAANG Rubric...
+                          </>
+                        ) : (
+                          <>
+                            <Send size={16} /> Submit Answer for AI Evaluation
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              ) : (
+                /* Evaluation Scorecard Screen */
+                <div className="glass-panel" style={{ padding: '32px', borderRadius: '20px', border: '1px solid rgba(56, 189, 248, 0.4)' }}>
+                  {/* Score & Verdict Banner */}
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    flexWrap: 'wrap',
+                    gap: '20px',
+                    padding: '24px',
+                    borderRadius: '16px',
+                    background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.8), rgba(30, 41, 59, 0.8))',
+                    border: '1px solid var(--border-subtle)',
+                    marginBottom: '26px'
+                  }}>
+                    <div>
+                      <div style={{ fontSize: '0.8rem', fontWeight: 800, textTransform: 'uppercase', color: '#38bdf8', letterSpacing: '0.06em', marginBottom: '6px' }}>
+                        TECHNICAL INTERVIEW EVALUATION
+                      </div>
+                      <h3 style={{ fontSize: '1.6rem', fontWeight: 800, color: '#fff', margin: 0 }}>
+                        Assessment for {simQuestion.title}
+                      </h3>
+                      <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', margin: '6px 0 0 0', maxWidth: '580px' }}>
+                        {simEvaluation.performanceSummary}
+                      </p>
+                    </div>
+
+                    <div style={{ textAlign: 'center', minWidth: '160px' }}>
+                      <div style={{ fontSize: '0.78rem', color: 'var(--text-dim)', marginBottom: '4px' }}>OVERALL SCORE</div>
+                      <div style={{ fontSize: '2.8rem', fontWeight: 900, color: '#38bdf8', lineHeight: 1 }}>
+                        {simEvaluation.overallScore} <span style={{ fontSize: '1.2rem', color: 'var(--text-dim)' }}>/ 100</span>
+                      </div>
+                      <span style={{
+                        marginTop: '8px',
+                        display: 'inline-block',
+                        fontSize: '0.78rem',
+                        fontWeight: 800,
+                        padding: '4px 12px',
+                        borderRadius: '8px',
+                        background: simEvaluation.verdict === 'Strong Hire' ? 'rgba(16, 185, 129, 0.2)' : simEvaluation.verdict === 'Hire' ? 'rgba(56, 189, 248, 0.2)' : 'rgba(244, 63, 94, 0.2)',
+                        color: simEvaluation.verdict === 'Strong Hire' ? '#34d399' : simEvaluation.verdict === 'Hire' ? '#38bdf8' : '#fb7185',
+                        border: '1px solid currentColor'
+                      }}>
+                        {simEvaluation.verdict?.toUpperCase()}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Strengths & Improvements Grid */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px', marginBottom: '24px' }}>
+                    {/* Strengths */}
+                    <div style={{
+                      padding: '20px',
+                      borderRadius: '14px',
+                      background: 'rgba(16, 185, 129, 0.08)',
+                      border: '1px solid rgba(16, 185, 129, 0.25)'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                        <CheckCircle size={18} color="#34d399" />
+                        <h4 style={{ fontSize: '0.95rem', fontWeight: 700, margin: 0, color: '#34d399' }}>
+                          Candidate Strengths & Competencies
+                        </h4>
+                      </div>
+                      <ul style={{ margin: 0, paddingLeft: '18px', display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.85rem', color: 'var(--text-main)' }}>
+                        {simEvaluation.strengths?.map((st, i) => (
+                          <li key={i}>{st}</li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    {/* Critical Gaps */}
+                    <div style={{
+                      padding: '20px',
+                      borderRadius: '14px',
+                      background: 'rgba(244, 63, 94, 0.08)',
+                      border: '1px solid rgba(244, 63, 94, 0.25)'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                        <AlertCircle size={18} color="#fb7185" />
+                        <h4 style={{ fontSize: '0.95rem', fontWeight: 700, margin: 0, color: '#fb7185' }}>
+                          Critical Gaps & Edge Cases Missed
+                        </h4>
+                      </div>
+                      <ul style={{ margin: 0, paddingLeft: '18px', display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.85rem', color: 'var(--text-main)' }}>
+                        {simEvaluation.improvements?.map((imp, i) => (
+                          <li key={i}>{imp}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+
+                  {/* Staff Engineer Model Highlights */}
+                  {Array.isArray(simEvaluation.modelAnswerHighlights) && simEvaluation.modelAnswerHighlights.length > 0 && (
+                    <div style={{
+                      padding: '20px',
+                      borderRadius: '14px',
+                      background: 'rgba(99, 102, 241, 0.08)',
+                      border: '1px solid rgba(99, 102, 241, 0.25)',
+                      marginBottom: '22px'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                        <Sparkles size={18} color="#818cf8" />
+                        <h4 style={{ fontSize: '0.95rem', fontWeight: 700, margin: 0, color: '#818cf8' }}>
+                          Staff Engineer Architecture Highlights (Expected Decisions)
+                        </h4>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        {simEvaluation.modelAnswerHighlights.map((mh, i) => (
+                          <div key={i} style={{ fontSize: '0.85rem', color: '#e0e7ff', display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                            <span style={{ color: '#818cf8' }}>•</span>
+                            <span>{mh}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Dr. Parkavi Counselling Advice */}
+                  {simEvaluation.counsellorTip && (
+                    <div style={{
+                      padding: '16px 20px',
+                      borderRadius: '12px',
+                      background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.12), rgba(56, 189, 248, 0.06))',
+                      border: '1px solid rgba(6, 182, 212, 0.35)',
+                      marginBottom: '26px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '12px'
+                    }}>
+                      <Award size={24} color="#06b6d4" style={{ flexShrink: 0 }} />
+                      <div style={{ fontSize: '0.86rem', color: 'var(--text-main)', lineHeight: 1.5 }}>
+                        <strong style={{ color: '#38bdf8' }}>Dr. Parkavi A. Recommendation: </strong>
+                        {simEvaluation.counsellorTip}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Action Buttons */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+                    <div style={{ display: 'flex', gap: '10px' }}>
+                      <button
+                        className="btn btn-secondary"
+                        onClick={() => setSimEvaluation(null)}
+                      >
+                        Edit & Re-evaluate Solution
+                      </button>
+                      <button
+                        className="btn btn-secondary"
+                        onClick={() => {
+                          setSimQuestion(null);
+                          setSimResponse('');
+                          setSimEvaluation(null);
+                        }}
+                      >
+                        Try Another Scenario
+                      </button>
+                    </div>
+
+                    <button
+                      className="btn btn-primary"
+                      disabled={downloadingPdf}
+                      onClick={handleDownloadSimPdf}
+                      style={{
+                        padding: '10px 22px',
+                        background: 'linear-gradient(135deg, #0284c7, #06b6d4)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        fontWeight: 700
+                      }}
+                    >
+                      <Download size={16} />
+                      {downloadingPdf ? 'Generating PDF Scorecard...' : 'Download Official PDF Report'}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1829,7 +2522,21 @@ export default function PlacementPracticePage() {
                     {quizSession.score} <span style={{ fontSize: '1.4rem', color: 'var(--text-dim)' }}>/ {quizSession.totalQuestions}</span>
                   </div>
                 </div>
-                <div>
+                <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', flexWrap: 'wrap' }}>
+                  <button
+                    className="btn btn-outline"
+                    disabled={downloadingPdf}
+                    onClick={() => handleDownloadQuizPdf(
+                      { topic: quizApplication?.placement?.title || 'Placement Assessment', difficulty: quizApplication?.placement?.difficulty || 'medium' },
+                      quizSession.score,
+                      quizSession.totalQuestions,
+                      []
+                    )}
+                    style={{ borderColor: 'rgba(56, 189, 248, 0.4)', color: '#38bdf8' }}
+                  >
+                    <Download size={16} />
+                    {downloadingPdf ? 'Generating PDF...' : 'Download Assessment PDF'}
+                  </button>
                   <button
                     className="btn btn-primary"
                     onClick={() => {

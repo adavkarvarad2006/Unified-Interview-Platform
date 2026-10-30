@@ -23,7 +23,8 @@ import {
   Globe,
   Save,
   Eye,
-  Sparkles
+  Sparkles,
+  Bot
 } from 'lucide-react';
 import RescheduleModal from '../components/RescheduleModal';
 import CancelModal from '../components/CancelModal';
@@ -273,6 +274,10 @@ export default function StudentDashboard() {
           </div>
 
           <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+            <Link to="/placements?tab=simulator" className="btn btn-secondary" style={{ fontSize: '0.85rem', borderColor: 'rgba(56, 189, 248, 0.4)' }}>
+              <Bot size={16} color="#38bdf8" />
+              AI Mock Interviewer
+            </Link>
             <Link to="/placements?tab=ai-quiz" className="btn btn-primary" style={{ fontSize: '0.85rem' }}>
               <Sparkles size={16} />
               Generate AI Quiz

@@ -110,6 +110,30 @@ export const api = {
 
   // SmartRoute Placement & AI Practice
   generateAiQuiz: (data) => request('/placements/generate-ai-quiz', { method: 'POST', body: JSON.stringify(data) }),
+  generateMockInterviewQuestion: (data) => request('/placements/mock-interview/question', { method: 'POST', body: JSON.stringify(data) }),
+  evaluateMockInterviewResponse: (data) => request('/placements/mock-interview/evaluate', { method: 'POST', body: JSON.stringify(data) }),
+  downloadAssessmentReport: async (data, filename = 'Assessment_Report.pdf') => {
+    const token = localStorage.getItem('token');
+    const response = await fetch(`${API_URL}/placements/download-report-pdf`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      },
+      body: JSON.stringify(data)
+    });
+    if (!response.ok) throw new Error('Failed to download PDF report');
+    const blob = await response.blob();
+    const blobUrl = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(blobUrl);
+    return true;
+  },
   getPlacements: (params = '') => request(`/placements${params ? `?${params}` : ''}`),
   getPlacement: (id) => request(`/placements/${id}`),
   getHostPlacements: () => request('/placements/mine'),

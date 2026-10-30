@@ -9,7 +9,12 @@ const {
   listPublicPlacements,
   registerCandidate
 } = require('../services/placementService');
-const { generateInstantQuiz } = require('../services/geminiQuestionService');
+const {
+  generateInstantQuiz,
+  generateMockInterviewQuestion,
+  evaluateMockInterviewResponse
+} = require('../services/geminiQuestionService');
+const { generateAssessmentReportPdf } = require('../utils/pdfGenerator');
 
 const placementSchema = z.object({
   companyName: z.string().trim().min(2).max(100),
@@ -153,10 +158,71 @@ async function generateAiQuizHandler(req, res) {
   }
 }
 
+async function generateMockInterviewQuestionHandler(req, res) {
+  try {
+    const { topic, type, level } = req.body || {};
+    const result = await generateMockInterviewQuestion({ topic, type, level });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message || 'Failed to generate mock interview question' });
+  }
+}
+
+async function evaluateMockInterviewResponseHandler(req, res) {
+  try {
+    const {
+      title,
+      scenario,
+      prompt,
+      keyFocusAreas,
+      candidateResponse,
+      role
+    } = req.body || {};
+
+    const candidateName = req.user?.name || req.body?.candidateName || 'Candidate';
+    const result = await evaluateMockInterviewResponse({
+      title,
+      scenario,
+      prompt,
+      keyFocusAreas,
+      candidateResponse,
+      role,
+      candidateName
+    });
+
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message || 'Failed to evaluate interview response' });
+  }
+}
+
+async function downloadAssessmentReportPdfHandler(req, res) {
+  try {
+    const candidateName = req.user?.name || req.body?.candidateName || 'Candidate';
+    const candidateEmail = req.user?.email || req.body?.candidateEmail || 'student@domain.com';
+
+    const pdfBuffer = generateAssessmentReportPdf({
+      ...req.body,
+      candidateName,
+      candidateEmail
+    });
+
+    const safeFilename = `Assessment_Report_${Date.now()}.pdf`;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${safeFilename}"`);
+    res.send(pdfBuffer);
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message || 'Failed to generate assessment report PDF' });
+  }
+}
+
 module.exports = {
   placementSchema,
   createPlacementHandler,
   generateAiQuizHandler,
+  generateMockInterviewQuestionHandler,
+  evaluateMockInterviewResponseHandler,
+  downloadAssessmentReportPdfHandler,
   listHostPlacementsHandler,
   listPlacementApplicantsHandler,
   listPublicPlacementsHandler,

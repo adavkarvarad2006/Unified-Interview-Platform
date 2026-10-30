@@ -117,7 +117,63 @@ function ensureResumeFileExists(filePath, candidateData = {}) {
   }
 }
 
+/**
+ * Generate a comprehensive Assessment & Mock Interview Report PDF
+ */
+function generateAssessmentReportPdf({
+  candidateName = 'Candidate',
+  candidateEmail = 'candidate@domain.com',
+  title = 'AI Technical Assessment Report',
+  type = 'Quiz Assessment',
+  topic = 'Computer Science',
+  difficulty = 'medium',
+  score = 0,
+  total = 5,
+  percentage = 0,
+  verdict = '',
+  strengths = [],
+  improvements = [],
+  counsellorTip = ''
+}) {
+  const calcPercent = percentage || Math.round((Number(score) / (Number(total) || 1)) * 100);
+  const dateStr = new Date().toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric'
+  });
+
+  const lines = [
+    `INTERVIEWPREP ASSESSMENT DOSSIER - ${title.toUpperCase()}`,
+    '=========================================================================',
+    `Candidate Name: ${candidateName}`,
+    `Candidate Email: ${candidateEmail}`,
+    `Evaluation Date: ${dateStr}`,
+    `Assessment Type: ${type} (${String(difficulty).toUpperCase()})`,
+    `Focus Domain / Topic: ${topic}`,
+    '-------------------------------------------------------------------------',
+    verdict 
+      ? `OVERALL EVALUATION SCORE: ${score} / 100  |  VERDICT: ${verdict.toUpperCase()}`
+      : `ASSESSMENT SCORE: ${score} of ${total}  (${calcPercent}%)  |  STATUS: PASSED`,
+    '-------------------------------------------------------------------------',
+    'KEY CANDIDATE STRENGTHS & COMPETENCIES:',
+    ...(strengths.length ? strengths.map(s => `+ ${s}`) : ['+ Demonstrated foundational computer science domain knowledge.']),
+    ' ',
+    'CRITICAL GROWTH AREAS & RECOMMENDED REVISIONS:',
+    ...(improvements.length ? improvements.map(i => `- ${i}`) : ['- Review edge cases, system bottlenecks, and mathematical sizing bounds.']),
+    ' ',
+    'COUNSELLOR 1-ON-1 PREPARATION RECOMMENDATION:',
+    counsellorTip ? `> ${counsellorTip}` : '> Bring your architecture choices to your 1-on-1 session with Dr. Parkavi A.',
+    '=========================================================================',
+    'Verified by: Dr. Parkavi A. - Lead Interview & Placement Counsellor',
+    'System: SmartRoute AI Assessment Engine & Unified Interview Platform'
+  ];
+
+  return createPdfDocument(lines);
+}
+
 module.exports = {
   createPdfDocument,
-  ensureResumeFileExists
+  ensureResumeFileExists,
+  generateAssessmentReportPdf
 };

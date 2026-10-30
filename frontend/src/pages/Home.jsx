@@ -14,7 +14,8 @@ import {
   Layers, 
   Sparkles,
   Users,
-  Compass
+  Compass,
+  Bot
 } from 'lucide-react';
 
 export default function Home() {
@@ -154,8 +155,11 @@ export default function Home() {
                 </p>
               </div>
               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                <Link to="/placements?tab=ai-quiz" className="btn btn-primary btn-sm">
-                  <Sparkles size={14} /> Generate AI Quiz
+                <Link to="/placements?tab=simulator" className="btn btn-primary btn-sm" style={{ background: 'linear-gradient(135deg, #0284c7, #06b6d4)' }}>
+                  <Bot size={14} /> AI Mock Interviewer
+                </Link>
+                <Link to="/placements?tab=ai-quiz" className="btn btn-secondary btn-sm">
+                  <Sparkles size={14} /> AI Quiz
                 </Link>
                 <Link to="/placements" className="btn btn-secondary btn-sm">
                   Explore Placements <ArrowRight size={14} />
