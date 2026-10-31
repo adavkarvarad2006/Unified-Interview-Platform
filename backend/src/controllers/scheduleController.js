@@ -1,4 +1,7 @@
 const mongoose = require('mongoose');
+require('../models/Person');
+require('../models/Trainee');
+require('../models/Booking');
 const Trainer = require('../models/Trainer');
 const TrainingSession = require('../models/TrainingSession');
 const { DailySummaryGenerator } = require('../services/summaryGenerators');

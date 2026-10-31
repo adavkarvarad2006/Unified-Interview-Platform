@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
@@ -15,7 +15,9 @@ import AdminDashboard from './pages/AdminDashboard';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import PlacementPracticePage from './pages/PlacementPracticePage';
-import TrainingSchedulePage from './pages/TrainingSchedulePage';
+
+// Dedicated TrainDesk Layout
+import TrainDeskLayout from './layouts/TrainDeskLayout';
 
 // Protected Route Component
 const ProtectedRoute = ({ children, allowedRoles }) => {
@@ -40,52 +42,76 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
   return children;
 };
 
+function AppRoutes() {
+  const location = useLocation();
+  const isTrainDeskRoute = location.pathname.startsWith('/training');
+
+  if (isTrainDeskRoute) {
+    return (
+      <Routes>
+        <Route
+          path="/training"
+          element={
+            <ProtectedRoute allowedRoles={['ADMIN', 'COUNSELLOR', 'STUDENT']}>
+              <TrainDeskLayout />
+            </ProtectedRoute>
+          }
+        />
+        <Route path="/training/*" element={<Navigate to="/training" replace />} />
+      </Routes>
+    );
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+      <Navbar />
+      <main style={{ flex: 1 }}>
+        <Routes>
+          {/* Public Routes */}
+          <Route path="/" element={<Home />} />
+          <Route path="/counsellor" element={<CounsellorProfile />} />
+          <Route path="/services" element={<ServicesPage />} />
+          <Route path="/book" element={<BookingPage />} />
+          <Route path="/booking-confirmation" element={<BookingConfirmationPage />} />
+          <Route path="/placements" element={<PlacementPracticePage />} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/admin-login" element={<LoginPage initialPortal="ADMIN" />} />
+          <Route path="/register" element={<RegisterPage />} />
+
+          {/* Student Portal (Protected) */}
+          <Route
+            path="/student"
+            element={
+              <ProtectedRoute allowedRoles={['STUDENT', 'ADMIN', 'COUNSELLOR']}>
+                <StudentDashboard />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Admin / Counsellor Portal (Protected) */}
+          <Route
+            path="/admin"
+            element={
+              <ProtectedRoute allowedRoles={['ADMIN', 'COUNSELLOR']}>
+                <AdminDashboard />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Fallback */}
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </main>
+      <Footer />
+    </div>
+  );
+}
+
 export default function App() {
   return (
     <AuthProvider>
       <Router>
-        <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
-          <Navbar />
-          <main style={{ flex: 1 }}>
-            <Routes>
-              {/* Public Routes */}
-              <Route path="/" element={<Home />} />
-              <Route path="/counsellor" element={<CounsellorProfile />} />
-              <Route path="/services" element={<ServicesPage />} />
-              <Route path="/book" element={<BookingPage />} />
-              <Route path="/booking-confirmation" element={<BookingConfirmationPage />} />
-              <Route path="/placements" element={<PlacementPracticePage />} />
-              <Route path="/training" element={<TrainingSchedulePage />} />
-              <Route path="/login" element={<LoginPage />} />
-              <Route path="/admin-login" element={<LoginPage initialPortal="ADMIN" />} />
-              <Route path="/register" element={<RegisterPage />} />
-
-              {/* Student Portal (Protected) */}
-              <Route
-                path="/student"
-                element={
-                  <ProtectedRoute allowedRoles={['STUDENT', 'ADMIN', 'COUNSELLOR']}>
-                    <StudentDashboard />
-                  </ProtectedRoute>
-                }
-              />
-
-              {/* Admin / Counsellor Portal (Protected) */}
-              <Route
-                path="/admin"
-                element={
-                  <ProtectedRoute allowedRoles={['ADMIN', 'COUNSELLOR']}>
-                    <AdminDashboard />
-                  </ProtectedRoute>
-                }
-              />
-
-              {/* Fallback */}
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
-          </main>
-          <Footer />
-        </div>
+        <AppRoutes />
       </Router>
     </AuthProvider>
   );
